@@ -4,8 +4,10 @@ name: Build Android APK (mobile)
 # that should run on every push. Trigger it from the Actions tab ("Run
 # workflow") whenever a distributable .apk is needed.
 #
-# The resulting APK is unsigned/debug-signed (installable directly on a
-# device with "install unknown apps" allowed, not for the Play Store) and
+# Builds the "release" variant (self-contained: the JS bundle is packaged
+# into the APK, so it runs without a Metro dev server) but signed with the
+# default debug keystore Expo's template ships — installable directly on a
+# device with "install unknown apps" allowed, not for the Play Store. It
 # points at whatever backend URL you give it below — the app can also be
 # repointed at a different backend afterwards, without rebuilding, from its
 # own "Configurar servidor" screen (Login or Perfil).
@@ -56,17 +58,17 @@ jobs:
       - name: Generate native Android project (expo prebuild)
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build debug APK
+      - name: Build release APK (self-contained, no dev server needed)
         working-directory: mobile/android
         env:
           EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: limpieza-trazabilidad-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: limpieza-trazabilidad-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
