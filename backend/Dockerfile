@@ -14,4 +14,7 @@ COPY prisma ./prisma
 RUN npm install --omit=dev && npx prisma generate
 COPY --from=build /app/dist ./dist
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+# Applies pending migrations and (idempotently, via upsert) the demo seed
+# data on every start, then boots the API - convenient for a first/simple
+# deployment (e.g. Render) with no separate migration step to run by hand.
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed; node dist/main.js"]
