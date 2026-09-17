@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hospital
+      POSTGRES_PASSWORD: hospital
+      POSTGRES_DB: hospital_cleaning
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hospital -d hospital_cleaning"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://hospital:hospital@postgres:5432/hospital_cleaning?schema=public
+      PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGIN: "*"
+      JWT_ACCESS_SECRET: change-me-access-secret
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_SECRET: change-me-refresh-secret
+      JWT_REFRESH_EXPIRES_IN: 30d
+      MIN_SECONDS_BETWEEN_REGISTRATIONS: 5
+      GEOLOCATION_ENABLED: "false"
+    ports:
+      - "3000:3000"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
+
+  admin-web:
+    build:
+      context: ./admin-web
+      args:
+        VITE_API_URL: http://localhost:3000/api/v1
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres_data:
