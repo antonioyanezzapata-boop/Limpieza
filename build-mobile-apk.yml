@@ -1,0 +1,72 @@
+name: Build Android APK (mobile)
+
+# Manual only: this is a ~10-15 minute native Android build, not something
+# that should run on every push. Trigger it from the Actions tab ("Run
+# workflow") whenever a distributable .apk is needed.
+#
+# The resulting APK is unsigned/debug-signed (installable directly on a
+# device with "install unknown apps" allowed, not for the Play Store) and
+# points at whatever backend URL you give it below — the app can also be
+# repointed at a different backend afterwards, without rebuilding, from its
+# own "Configurar servidor" screen (Login or Perfil).
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: >
+          URL pública del backend, incluyendo /api/v1 (ej:
+          https://mi-backend.onrender.com/api/v1). Si tu backend todavía no
+          está desplegado, deja el valor de ejemplo: podrás configurarlo
+          luego desde la app sin recompilar.
+        required: true
+        default: "http://localhost:3000/api/v1"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project (expo prebuild)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: limpieza-trazabilidad-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
