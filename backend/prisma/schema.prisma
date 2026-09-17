@@ -1,0 +1,294 @@
+// Hospital cleaning traceability platform - Prisma schema
+// Multi-tenant ready: organization_id present on primary entities so the
+// system can later grow into several hospitals/sites without a data model
+// change (see README "Escalabilidad").
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMIN
+  SUPERVISOR
+  CLEANING_STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AreaStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum QrStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum EventType {
+  ENTRY
+  EXIT
+}
+
+enum AccessEventStatus {
+  VALID
+  CORRECTED
+  VOID
+}
+
+enum SyncStatus {
+  SYNCED
+  PENDING
+}
+
+enum SessionStatus {
+  OPEN
+  COMPLETED
+  INCONSISTENT
+  CORRECTED
+}
+
+/// Organization -> Site -> Area hierarchy. A single-site deployment simply
+/// has one Site row; the model supports several from day one.
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  status    AreaStatus @default(ACTIVE)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sites     Site[]
+  roles     Role[]
+  users     User[]
+  areas     Area[]
+  accessEvents     AccessEvent[]
+  cleaningSessions CleaningSession[]
+  auditLogs        AuditLog[]
+
+  @@map("organizations")
+}
+
+model Site {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  address        String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  areas        Area[]
+
+  @@map("sites")
+}
+
+model Role {
+  id             String     @id @default(uuid())
+  organizationId String?    @map("organization_id")
+  name           RoleName
+  description    String?
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  users        User[]
+
+  @@unique([organizationId, name])
+  @@map("roles")
+}
+
+model User {
+  id             String     @id @default(uuid())
+  organizationId String     @map("organization_id")
+  employeeCode   String     @map("employee_code")
+  firstName      String     @map("first_name")
+  lastName       String     @map("last_name")
+  identification String
+  email          String
+  phone          String?
+  passwordHash   String     @map("password_hash")
+  /// Hash of the offline PIN, provisioned on first successful online login.
+  /// Used exclusively by the mobile app's offline-authentication fallback.
+  offlinePinHash String?    @map("offline_pin_hash")
+  roleId         String     @map("role_id")
+  status         UserStatus @default(ACTIVE)
+  lastLoginAt    DateTime?  @map("last_login_at")
+  lastLoginDevice String?   @map("last_login_device")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  deletedAt      DateTime?  @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  refreshTokens    RefreshToken[]
+  devices          Device[]
+  accessEvents     AccessEvent[]
+  cleaningSessions CleaningSession[]
+  auditLogsActor   AuditLog[]        @relation("auditActor")
+
+  @@unique([organizationId, employeeCode])
+  @@unique([organizationId, email])
+  @@index([organizationId, status])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  deviceId  String?   @map("device_id")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Device {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  deviceIdentifier String   @map("device_identifier")
+  platform         String?
+  lastSeenAt       DateTime @default(now()) @map("last_seen_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, deviceIdentifier])
+  @@map("devices")
+}
+
+model Area {
+  id             String     @id @default(uuid())
+  organizationId String     @map("organization_id")
+  siteId         String?    @map("site_id")
+  code           String
+  name           String
+  floor          String?
+  zone           String?
+  description    String?
+  status         AreaStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  deletedAt      DateTime?  @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  site         Site?        @relation(fields: [siteId], references: [id])
+
+  qrCodes          QrCode[]
+  accessEvents     AccessEvent[]
+  cleaningSessions CleaningSession[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+  @@map("areas")
+}
+
+/// The QR never encodes readable area data (see spec section 6/24): it only
+/// carries an opaque, non-predictable token that the backend resolves.
+model QrCode {
+  id        String    @id @default(uuid())
+  areaId    String    @map("area_id")
+  token     String    @unique @default(uuid())
+  status    QrStatus  @default(ACTIVE)
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  area         Area          @relation(fields: [areaId], references: [id])
+  accessEvents AccessEvent[]
+
+  @@index([areaId])
+  @@map("qr_codes")
+}
+
+model AccessEvent {
+  id               String             @id @default(uuid())
+  organizationId   String             @map("organization_id")
+  userId           String             @map("user_id")
+  areaId           String             @map("area_id")
+  qrId             String?            @map("qr_id")
+  eventType        EventType          @map("event_type")
+  serverTimestamp  DateTime           @map("server_timestamp")
+  deviceTimestamp  DateTime?          @map("device_timestamp")
+  timezone         String             @default("UTC")
+  deviceId         String?            @map("device_id")
+  latitude         Float?
+  longitude        Float?
+  observations     String?
+  status           AccessEventStatus  @default(VALID)
+  syncStatus       SyncStatus         @default(SYNCED) @map("sync_status")
+  /// Idempotency key generated on-device; protects offline sync from duplicates.
+  clientUuid       String?            @unique @map("client_uuid")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  area         Area         @relation(fields: [areaId], references: [id])
+  qr           QrCode?      @relation(fields: [qrId], references: [id])
+
+  entrySessions CleaningSession[] @relation("entryEvent")
+  exitSessions  CleaningSession[] @relation("exitEvent")
+
+  @@index([userId, areaId, eventType])
+  @@index([organizationId, serverTimestamp])
+  @@map("access_events")
+}
+
+model CleaningSession {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  userId         String        @map("user_id")
+  areaId         String        @map("area_id")
+  entryEventId   String        @unique @map("entry_event_id")
+  exitEventId    String?       @unique @map("exit_event_id")
+  startedAt      DateTime      @map("started_at")
+  finishedAt     DateTime?     @map("finished_at")
+  durationSeconds Int?         @map("duration_seconds")
+  status         SessionStatus @default(OPEN)
+  observations   String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  area         Area         @relation(fields: [areaId], references: [id])
+  entryEvent   AccessEvent  @relation("entryEvent", fields: [entryEventId], references: [id])
+  exitEvent    AccessEvent? @relation("exitEvent", fields: [exitEventId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([userId, startedAt])
+  @@index([areaId, startedAt])
+  @@map("cleaning_sessions")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  actorUserId    String?  @map("actor_user_id")
+  action         String
+  entity         String
+  entityId       String   @map("entity_id")
+  previousValue  Json?    @map("previous_value")
+  newValue       Json?    @map("new_value")
+  reason         String?
+  ipAddress      String?  @map("ip_address")
+  device         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  actor        User?        @relation("auditActor", fields: [actorUserId], references: [id])
+
+  @@index([organizationId, entity, entityId])
+  @@map("audit_logs")
+}
