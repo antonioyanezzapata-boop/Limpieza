@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Limpieza Trazabilidad",
+    "slug": "limpieza-trazabilidad",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "hospital",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La app necesita acceder a la cámara para escanear los códigos QR de las áreas del hospital."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hospital.limpiezatrazabilidad",
+      "infoPlist": {
+        "NSCameraUsageDescription": "La app necesita acceder a la cámara para escanear los códigos QR de las áreas del hospital."
+      }
+    },
+    "android": {
+      "package": "com.hospital.limpiezatrazabilidad",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["CAMERA"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
